@@ -163,7 +163,7 @@ AudioDecoderState AudioDecoder::decode(bool stop_gracefully) {
       this->end_of_file_ = true;
     } else if (state == FileDecoderState::FAILED) {
       return AudioDecoderState::FAILED;
-    } else {
+    } else if(state == FileDecoderState::MORE_TO_PROCESS){
       this->potentially_failed_count_ = 0;
     }
   }
@@ -228,8 +228,14 @@ FileDecoderState AudioDecoder::decode_flac_() {
     // Not an issue, just needs more data that we'll get next time.
     return FileDecoderState::POTENTIALLY_FAILED;
   } else if (result > flac::FLAC_DECODER_ERROR_OUT_OF_DATA) {
-    // Serious error, can't recover
-    return FileDecoderState::FAILED;
+    // Corrupted frame, don't retry with current buffer content, wait for new sync
+    ESP_LOGW(TAG, "Corrupted frame, error_code: %d. Re-syncing.", result );
+    
+    size_t bytes_consumed = this->flac_decoder_->get_bytes_index();
+    this->input_buffer_current_ += bytes_consumed;
+    this->input_buffer_length_ = this->flac_decoder_->get_bytes_left();
+
+    return FileDecoderState::POTENTIALLY_FAILED;
   }
 
   // We have successfully decoded some input data and have new output data
